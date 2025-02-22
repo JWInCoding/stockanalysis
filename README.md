@@ -1,4 +1,11 @@
+**确保脚本有执行权限：**
+
+```bash
+chmod +x start_stock.sh
+```
+
 **首次使用（安装环境和依赖）:**
+
 ```bash
 cd ~/stock_analysis
 ./start_stock.sh

@@ -187,6 +187,8 @@ def analyze_stock_data(code):
                     'amount': '成交额'
                 }
                 stock_data = stock_data.rename(columns=column_mapping)
+                # 指数数据添加空的换手率列
+                stock_data['换手率'] = None
         else:
             # 获取股票历史数据
             stock_data = ak.stock_zh_a_hist(
@@ -216,7 +218,7 @@ def analyze_stock_data(code):
             stock_data['日期'] = pd.to_datetime(stock_data['日期'])
 
         # 确保数值列为浮点数类型
-        numeric_columns = ['开盘', '收盘', '最高', '最低', '成交量', '成交额']
+        numeric_columns = ['开盘', '收盘', '最高', '最低', '成交量', '成交额', '换手率']
         for col in numeric_columns:
             if col in stock_data.columns:
                 stock_data[col] = pd.to_numeric(stock_data[col], errors='coerce')
@@ -249,15 +251,16 @@ def analyze_stock_data(code):
         # 获取最近21个交易日的数据
         recent_data = stock_data.tail(21)
 
-        print(f"\n{pure_code} ({name}) 最近21个交易日数据：")  # 使用 name 变量
-        print("日期\t\t收盘价\t成交量(万手)\t量比\tMA3\tMA5\tMA8\tMA13\tMA21")
-        print("-" * 100)
+        print(f"\n{pure_code} ({name}) 最近21个交易日数据：")
+        print("日期\t\t收盘价\t成交量(万手)\t量比\t换手率\tMA3\tMA5\tMA8\tMA13\tMA21")
+        print("-" * 120)
         
         for i, row in recent_data.iterrows():
             volume_ratio = row['成交量'] / row['Volume_MA5'] if not pd.isna(row['Volume_MA5']) else 0
             volume_ratio = round(volume_ratio, 2)
+            turnover = f"{row['换手率']:.2f}%" if pd.notna(row['换手率']) else "N/A"
             
-            print(f"{row['日期']}\t{row['收盘']:.2f}\t{format_volume(row['成交量'])}\t\t{volume_ratio:.2f}\t"
+            print(f"{row['日期']}\t{row['收盘']:.2f}\t{format_volume(row['成交量'])}\t\t{volume_ratio:.2f}\t{turnover}\t"
                   f"{row['MA3']:.2f}\t{row['MA5']:.2f}\t{row['MA8']:.2f}\t{row['MA13']:.2f}\t{row['MA21']:.2f}")
         
         # 打印最新均线的排列情况
@@ -332,6 +335,20 @@ def analyze_stock_data(code):
             print("当前价格位于布林带下轨以下，可能存在反弹机会")
         else:
             print("当前价格在布林带通道内运行")
+
+        # 在技术指标分析部分添加换手率分析
+        latest = recent_data.iloc[-1]
+        if not pd.isna(latest['换手率']):
+            print("\n换手率分析：")
+            turnover = latest['换手率']
+            if turnover > 20:
+                print(f"当前换手率：{turnover:.2f}% - 换手率极高，表明交投十分活跃")
+            elif turnover > 10:
+                print(f"当前换手率：{turnover:.2f}% - 换手率较高，市场活跃度强")
+            elif turnover > 5:
+                print(f"当前换手率：{turnover:.2f}% - 换手率适中，成交较为活跃")
+            else:
+                print(f"当前换手率：{turnover:.2f}% - 换手率偏低，交投较为清淡")
             
         # 预测未来5个交易日的MA13和MA21
         ma13_predictions = predict_ma(recent_data, 13, 5)
@@ -384,6 +401,9 @@ def analyze_stock_data(code):
             risks.append("价格突破布林带上轨，注意回调风险")
         if latest_volume > avg_volume * 2:
             risks.append("成交量显著放大，注意价格变动风险")
+        # 在风险提示部分添加换手率分析
+        if not pd.isna(latest['换手率']) and latest['换手率'] > 15:
+            risks.append(f"换手率达到{latest['换手率']:.2f}%，交易过于活跃，注意风险")
             
         if risks:
             for risk in risks:
