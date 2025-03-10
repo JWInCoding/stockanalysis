@@ -1,96 +1,19 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import akshare as ak
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta, date
+import sys
 import re
+import time
+from datetime import datetime, timedelta, date
 
-def is_valid_stock_code(code):
-    """验证股票代码和指数代码格式是否正确"""
-    # 股票代码格式：sh000001 或 000001
-    stock_pattern = r'^(?:sh|sz|bj)?[0-9]{6}$'
-    # 指数代码格式支持两种：1A0001 或 000001/399001
-    index_pattern = r'^(000[0-9]{3}|399[0-9]{3}|[0-9][A-Za-z][0-9]{4})$'
-    return bool(re.match(stock_pattern, code.lower()) or re.match(index_pattern, code.upper()))
-
-def normalize_stock_code(code):
-    """标准化股票和指数代码格式"""
-    code = code.strip()
-    
-    # 处理指数代码映射关系
-    index_map = {
-        '1A0001': 'sh000001',  # 上证指数
-        '000001': 'sh000001',  # 上证指数
-        '399001': 'sz399001',  # 深证成指
-        '399006': 'sz399006',  # 创业板指
-        '000300': 'sh000300',  # 沪深300
-        '000016': 'sh000016',  # 上证50
-        '399905': 'sz399905',  # 中证500
-    }
-    
-    # 如果是老式指数代码格式（如1A0001）或直接输入指数代码，转换为带市场前缀的格式
-    if re.match(r'^[0-9][A-Za-z][0-9]{4}$', code.upper()) or \
-       re.match(r'^(000[0-9]{3}|399[0-9]{3})$', code):
-        return index_map.get(code.upper(), index_map.get(code, code))
-    
-    # 如果已经带有市场前缀，则直接返回
-    if re.match(r'^(sh|sz|bj)', code.lower()):
-        return code.lower()
-    
-    # 其他情况（普通股票代码），去除可能的前缀
-    return code
-
-def get_stock_name(code):
-    """获取股票或指数名称"""
-    try:
-        # 指数名称映射
-        index_names = {
-            'sh000001': '上证指数',
-            '000001': '上证指数',
-            '1A0001': '上证指数',
-            'sz399001': '深证成指',
-            '399001': '深证成指',
-            'sz399006': '创业板指',
-            '399006': '创业板指',
-            'sh000300': '沪深300',
-            '000300': '沪深300',
-            'sh000016': '上证50',
-            '000016': '上证50',
-            'sz399905': '中证500',
-            '399905': '中证500'
-        }
-
-        # 标准化代码
-        normalized_code = normalize_stock_code(code)
-        
-        # 检查是否为指数代码
-        # 1. 检查完整的带前缀指数代码
-        if normalized_code in index_names:
-            return index_names[normalized_code]
-            
-        # 2. 检查不带前缀的指数代码
-        if re.match(r'^(000[0-9]{3}|399[0-9]{3})$', code):
-            return index_names.get(code, None)
-            
-        # 3. 检查老式指数代码（如1A0001）
-        if re.match(r'^[0-9][A-Za-z][0-9]{4}$', code.upper()):
-            return index_names.get(code.upper(), None)
-
-        # 如果不是指数，则获取股票名称
-        # 去除可能的市场前缀
-        pure_code = re.sub(r'^(sh|sz|bj)', '', normalized_code)
-        stock_info = ak.stock_zh_a_spot_em()
-        stock_row = stock_info[stock_info['代码'] == pure_code]
-        if not stock_row.empty:
-            return stock_row.iloc[0]['名称']
-
-    except Exception as e:
-        print(f"获取名称时出错: {e}")
-    
-    return None
 
 def format_volume(volume):
     """将成交量格式化为易读的形式（单位：万手）"""
     return round(volume / 10000, 2)
+
 
 def calculate_macd(data):
     """计算MACD指标"""
@@ -101,6 +24,7 @@ def calculate_macd(data):
     hist = macd - signal
     return macd, signal, hist
 
+
 def calculate_rsi(data, periods=14):
     """计算RSI指标"""
     delta = data['收盘'].diff()
@@ -110,6 +34,7 @@ def calculate_rsi(data, periods=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+
 def calculate_bollinger_bands(data, window=20, num_std=2):
     """计算布林带指标"""
     sma = data['收盘'].rolling(window=window).mean()
@@ -118,6 +43,7 @@ def calculate_bollinger_bands(data, window=20, num_std=2):
     lower_band = sma - (std * num_std)
     return sma, upper_band, lower_band
 
+
 def predict_ma(recent_data, ma_period, predict_days):
     """预测未来几天的均线值"""
     prices = recent_data['收盘'].values
@@ -125,10 +51,8 @@ def predict_ma(recent_data, ma_period, predict_days):
     y = prices
     z = np.polyfit(x, y, 1)
     p = np.poly1d(z)
-    
     predictions = []
     last_prices = prices[-ma_period:].tolist()
-    
     for i in range(predict_days):
         next_price = p(len(prices) + i)
         if len(last_prices) >= ma_period:
@@ -136,8 +60,8 @@ def predict_ma(recent_data, ma_period, predict_days):
         last_prices.append(next_price)
         ma_value = sum(last_prices[-ma_period:]) / ma_period
         predictions.append(ma_value)
-    
     return predictions
+
 
 def get_next_trading_dates(last_date, num_days):
     """获取未来的交易日期"""
@@ -145,32 +69,52 @@ def get_next_trading_dates(last_date, num_days):
         last_date = last_date.strftime("%Y-%m-%d")
     elif isinstance(last_date, pd.Timestamp):
         last_date = last_date.strftime("%Y-%m-%d")
-    
     current_date = datetime.strptime(last_date, "%Y-%m-%d")
     future_dates = []
-    
     while len(future_dates) < num_days:
         current_date += timedelta(days=1)
-        if current_date.weekday() < 5:
+        if current_date.weekday() < 5:  # 只考虑工作日
             future_dates.append(current_date.strftime("%Y-%m-%d"))
-    
     return future_dates
 
-def analyze_stock_data(code):
-    """分析股票或指数数据"""
+
+def update_progress(progress, total, prefix='', suffix='', length=30):
+    """显示进度条"""
+    filled_length = int(length * progress // total)
+    bar = '█' * filled_length + '-' * (length - filled_length)
+    sys.stdout.write(f'\r{prefix} |{bar}| {progress}/{total} {suffix}')
+    sys.stdout.flush()
+    if progress == total:
+        print()
+
+
+def analyze_stock_data(code, output_file=None):
+    """分析股票或指数数据，结果可输出到文件"""
+    # 准备文件输出
+    if output_file:
+        f_out = open(output_file, 'w', encoding='utf-8')
+    else:
+        f_out = sys.stdout
+    
     try:
-        pure_code = normalize_stock_code(code)
-        name = get_stock_name(code)
-        print(f"正在使用代码 {pure_code} 获取数据...")
+        # 控制台显示进度信息
+        print(f"正在获取 {code} 的日线数据...", file=sys.stdout)
+        
+        # 文件中写入标题
+        print(f"# {code} 日线数据分析报告", file=f_out)
+        print(f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n", file=f_out)
 
         end_date = datetime.now().strftime("%Y%m%d")
         start_date = (datetime.now() - timedelta(days=90)).strftime("%Y%m%d")
 
+        # 显示进度 - 步骤1
+        update_progress(1, 5, prefix='日线数据分析进度:', suffix='获取数据中')
+        
         # 判断是否为指数代码
-        if re.match(r'^(sh|sz)', pure_code.lower()):
+        if re.match(r'^(sh|sz)', code.lower()):
             # 提取市场代码和数字部分
-            market = pure_code[:2].lower()
-            number = pure_code[2:]
+            market = code[:2].lower()
+            number = code[2:]
             # 使用正确的指数数据获取接口
             stock_data = ak.stock_zh_index_daily_em(
                 symbol=f"{market}{number}"
@@ -192,7 +136,7 @@ def analyze_stock_data(code):
         else:
             # 获取股票历史数据
             stock_data = ak.stock_zh_a_hist(
-                symbol=pure_code,
+                symbol=code,
                 period="daily",
                 start_date=start_date,
                 end_date=end_date,
@@ -200,19 +144,19 @@ def analyze_stock_data(code):
             )
 
         if stock_data is None or stock_data.empty:
-            print(f"未能获取到 {code} 的数据，请检查代码是否正确")
+            print(f"未能获取到 {code} 的数据，请检查代码是否正确", file=f_out)
             return
 
-        # 打印列名，用于调试
-        print("获取到的数据列名:", stock_data.columns.tolist())
+        # 写入基本数据信息到文件
+        print(f"## 基本数据信息", file=f_out)
+        print(f"- 数据周期: 日线", file=f_out)
+        print(f"- 起始日期: {start_date}", file=f_out)
+        print(f"- 结束日期: {end_date}", file=f_out)
+        print(f"- 总数据条数: {len(stock_data)}\n", file=f_out)
 
-        # 确保必要的列都存在
-        required_columns = ['日期', '开盘', '收盘', '最高', '最低', '成交量', '成交额']
-        if not all(col in stock_data.columns for col in required_columns):
-            missing_columns = [col for col in required_columns if col not in stock_data.columns]
-            print(f"获取的数据格式不正确，缺少以下列：{missing_columns}")
-            return
-
+        # 显示进度 - 步骤2
+        update_progress(2, 5, prefix='日线数据分析进度:', suffix='处理数据中')
+        
         # 确保日期列格式统一
         if isinstance(stock_data['日期'].iloc[0], str):
             stock_data['日期'] = pd.to_datetime(stock_data['日期'])
@@ -223,6 +167,9 @@ def analyze_stock_data(code):
             if col in stock_data.columns:
                 stock_data[col] = pd.to_numeric(stock_data[col], errors='coerce')
 
+        # 显示进度 - 步骤3
+        update_progress(3, 5, prefix='日线数据分析进度:', suffix='计算技术指标')
+        
         # 计算所有移动平均线
         stock_data['MA3'] = stock_data['收盘'].rolling(window=3).mean()
         stock_data['MA5'] = stock_data['收盘'].rolling(window=5).mean()
@@ -248,24 +195,25 @@ def analyze_stock_data(code):
         # 计算成交量的移动平均
         stock_data['Volume_MA5'] = stock_data['成交量'].rolling(window=5).mean()
 
+        # 显示进度 - 步骤4
+        update_progress(4, 5, prefix='日线数据分析进度:', suffix='分析数据中')
+        
         # 获取最近21个交易日的数据
         recent_data = stock_data.tail(21)
-
-        print(f"\n{pure_code} ({name}) 最近21个交易日数据：")
-        print("日期\t\t收盘价\t成交量(万手)\t量比\t换手率\tMA3\tMA5\tMA8\tMA13\tMA21")
-        print("-" * 120)
+        
+        # 将结果写入文件
+        print(f"## 最近21个交易日数据", file=f_out)
+        print("| 日期 | 收盘价 | 成交量(万手) | 量比 | 换手率 | MA3 | MA5 | MA8 | MA13 | MA21 |", file=f_out)
+        print("|------|--------|-------------|------|--------|-----|-----|-----|------|------|", file=f_out)
         
         for i, row in recent_data.iterrows():
             volume_ratio = row['成交量'] / row['Volume_MA5'] if not pd.isna(row['Volume_MA5']) else 0
             volume_ratio = round(volume_ratio, 2)
             turnover = f"{row['换手率']:.2f}%" if pd.notna(row['换手率']) else "N/A"
-            
-            print(f"{row['日期']}\t{row['收盘']:.2f}\t{format_volume(row['成交量'])}\t\t{volume_ratio:.2f}\t{turnover}\t"
-                  f"{row['MA3']:.2f}\t{row['MA5']:.2f}\t{row['MA8']:.2f}\t{row['MA13']:.2f}\t{row['MA21']:.2f}")
+            print(f"| {row['日期'].strftime('%Y-%m-%d')} | {row['收盘']:.2f} | {format_volume(row['成交量']):.2f} | {volume_ratio:.2f} | {turnover} | {row['MA3']:.2f} | {row['MA5']:.2f} | {row['MA8']:.2f} | {row['MA13']:.2f} | {row['MA21']:.2f} |", file=f_out)
         
-        # 打印最新均线的排列情况
+        print("\n## 均线排列（从高到低）", file=f_out)
         latest = recent_data.iloc[-1]
-        print("\n最新均线排列（从高到低）：")
         ma_dict = {
             'MA3': latest['MA3'],
             'MA5': latest['MA5'],
@@ -275,40 +223,41 @@ def analyze_stock_data(code):
         }
         sorted_ma = dict(sorted(ma_dict.items(), key=lambda x: x[1], reverse=True))
         for ma, value in sorted_ma.items():
-            print(f"{ma}: {value:.2f}")
+            print(f"- {ma}: {value:.2f}", file=f_out)
         
-        # 成交量分析
+        print("\n## 成交量分析", file=f_out)
         avg_volume = recent_data['成交量'].mean()
         latest_volume = recent_data['成交量'].iloc[-1]
         volume_trend = "放量" if latest_volume > avg_volume else "缩量"
-        print(f"\n成交量分析：")
-        print(f"21日平均成交量：{format_volume(avg_volume):.2f}万手")
-        print(f"最新成交量：{format_volume(latest_volume):.2f}万手")
-        print(f"成交量特征：{volume_trend}")
+        print(f"- 21日平均成交量：{format_volume(avg_volume):.2f}万手", file=f_out)
+        print(f"- 最新成交量：{format_volume(latest_volume):.2f}万手", file=f_out)
+        print(f"- 成交量特征：{volume_trend}", file=f_out)
         
         # 判断多空头排列
+        trend_text = ""
         if latest['MA3'] > latest['MA5'] > latest['MA8'] > latest['MA13'] > latest['MA21']:
-            print("\n当前呈现标准多头排列")
+            trend_text = "当前呈现标准多头排列"
         elif latest['MA3'] < latest['MA5'] < latest['MA8'] < latest['MA13'] < latest['MA21']:
-            print("\n当前呈现标准空头排列")
+            trend_text = "当前呈现标准空头排列"
         else:
-            print("\n当前均线交叉混乱，建议观察趋势变化")
+            trend_text = "当前均线交叉混乱，建议观察趋势变化"
+        print(f"- 均线排列特征: {trend_text}", file=f_out)
         
         # 技术指标分析
-        print("\n=== 技术指标分析 ===")
+        print("\n## 技术指标分析", file=f_out)
         
         # MACD分析
-        print("\nMACD指标分析：")
+        print("\n### MACD指标分析", file=f_out)
         macd_trend = "金叉" if latest['MACD'] > latest['Signal'] else "死叉"
         macd_strength = abs(latest['MACD'] - latest['Signal'])
-        print(f"MACD当前形态：{macd_trend}")
-        print(f"MACD强度：{macd_strength:.3f}")
-        print(f"MACD值：{latest['MACD']:.3f}")
-        print(f"信号线值：{latest['Signal']:.3f}")
-        print(f"MACD柱状值：{latest['MACD_Hist']:.3f}")
+        print(f"- MACD当前形态：{macd_trend}", file=f_out)
+        print(f"- MACD强度：{macd_strength:.3f}", file=f_out)
+        print(f"- MACD值：{latest['MACD']:.3f}", file=f_out)
+        print(f"- 信号线值：{latest['Signal']:.3f}", file=f_out)
+        print(f"- MACD柱状值：{latest['MACD_Hist']:.3f}", file=f_out)
         
         # RSI分析
-        print("\nRSI指标分析：")
+        print("\n### RSI指标分析", file=f_out)
         rsi_value = latest['RSI']
         if rsi_value > 70:
             rsi_status = "超买区间"
@@ -316,62 +265,63 @@ def analyze_stock_data(code):
             rsi_status = "超卖区间"
         else:
             rsi_status = "中性区间"
-        print(f"RSI值：{rsi_value:.1f} ({rsi_status})")
+        print(f"- RSI值：{rsi_value:.1f} ({rsi_status})", file=f_out)
         
         # 布林带分析
-        print("\n布林带分析：")
+        print("\n### 布林带分析", file=f_out)
         current_price = latest['收盘']
         bb_position = ((current_price - latest['BB_Lower']) / 
                       (latest['BB_Upper'] - latest['BB_Lower']) * 100)
-        print(f"当前价格：{current_price:.2f}")
-        print(f"布林带上轨：{latest['BB_Upper']:.2f}")
-        print(f"布林带中轨：{latest['BB_Middle']:.2f}")
-        print(f"布林带下轨：{latest['BB_Lower']:.2f}")
-        print(f"布林带位置：{bb_position:.1f}%")
+        print(f"- 当前价格：{current_price:.2f}", file=f_out)
+        print(f"- 布林带上轨：{latest['BB_Upper']:.2f}", file=f_out)
+        print(f"- 布林带中轨：{latest['BB_Middle']:.2f}", file=f_out)
+        print(f"- 布林带下轨：{latest['BB_Lower']:.2f}", file=f_out)
+        print(f"- 布林带位置：{bb_position:.1f}%", file=f_out)
         
         if current_price > latest['BB_Upper']:
-            print("当前价格位于布林带上轨以上，可能存在回调风险")
+            print("- 当前价格位于布林带上轨以上，可能存在回调风险", file=f_out)
         elif current_price < latest['BB_Lower']:
-            print("当前价格位于布林带下轨以下，可能存在反弹机会")
+            print("- 当前价格位于布林带下轨以下，可能存在反弹机会", file=f_out)
         else:
-            print("当前价格在布林带通道内运行")
+            print("- 当前价格在布林带通道内运行", file=f_out)
 
-        # 在技术指标分析部分添加换手率分析
-        latest = recent_data.iloc[-1]
+        # 显示进度 - 步骤5
+        update_progress(5, 5, prefix='日线数据分析进度:', suffix='完成预测与总结')
+        
+        # 换手率分析
         if not pd.isna(latest['换手率']):
-            print("\n换手率分析：")
+            print("\n### 换手率分析", file=f_out)
             turnover = latest['换手率']
             if turnover > 20:
-                print(f"当前换手率：{turnover:.2f}% - 换手率极高，表明交投十分活跃")
+                print(f"- 当前换手率：{turnover:.2f}% - 换手率极高，表明交投十分活跃", file=f_out)
             elif turnover > 10:
-                print(f"当前换手率：{turnover:.2f}% - 换手率较高，市场活跃度强")
+                print(f"- 当前换手率：{turnover:.2f}% - 换手率较高，市场活跃度强", file=f_out)
             elif turnover > 5:
-                print(f"当前换手率：{turnover:.2f}% - 换手率适中，成交较为活跃")
+                print(f"- 当前换手率：{turnover:.2f}% - 换手率适中，成交较为活跃", file=f_out)
             else:
-                print(f"当前换手率：{turnover:.2f}% - 换手率偏低，交投较为清淡")
-            
+                print(f"- 当前换手率：{turnover:.2f}% - 换手率偏低，交投较为清淡", file=f_out)
+        
         # 预测未来5个交易日的MA13和MA21
         ma13_predictions = predict_ma(recent_data, 13, 5)
         ma21_predictions = predict_ma(recent_data, 21, 5)
-        
         last_date = recent_data.iloc[-1]['日期']
         future_dates = get_next_trading_dates(last_date, 5)
         
-        print("\n未来5个交易日均线预测：")
-        print("日期\t\tMA13预测\tMA21预测\t差值")
-        print("-" * 50)
+        print("\n## 未来5个交易日均线预测", file=f_out)
+        print("| 日期 | MA13预测 | MA21预测 | 差值 |", file=f_out)
+        print("|------|---------|---------|------|", file=f_out)
         for i in range(5):
             diff = ma13_predictions[i] - ma21_predictions[i]
-            print(f"{future_dates[i]}\t{ma13_predictions[i]:.2f}\t{ma21_predictions[i]:.2f}\t{diff:.2f}")
+            print(f"| {future_dates[i]} | {ma13_predictions[i]:.2f} | {ma21_predictions[i]:.2f} | {diff:.2f} |", file=f_out)
         
-        print("\n预测趋势分析：")
+        print("\n### 预测趋势分析", file=f_out)
         ma13_trend = ma13_predictions[-1] - ma13_predictions[0]
         ma21_trend = ma21_predictions[-1] - ma21_predictions[0]
-        print(f"MA13五日预测变化：{ma13_trend:.2f}")
-        print(f"MA21五日预测变化：{ma21_trend:.2f}")
+        print(f"- MA13五日预测变化：{ma13_trend:.2f}", file=f_out)
+        print(f"- MA21五日预测变化：{ma21_trend:.2f}", file=f_out)
         
         # 综合分析和建议
-        print("\n=== 综合分析和建议 ===")
+        print("\n## 综合分析和建议", file=f_out)
         
         # 趋势强度分析
         trend_signals = []
@@ -383,17 +333,17 @@ def analyze_stock_data(code):
             trend_signals.append("MACD呈现金叉形态")
         if current_price > latest['BB_Middle']:
             trend_signals.append("价格在布林带中轨之上")
-            
-        print("\n趋势信号：")
+        
+        print("\n### 趋势信号", file=f_out)
         if trend_signals:
-            print("看多信号：")
+            print("看多信号：", file=f_out)
             for signal in trend_signals:
-                print(f"- {signal}")
+                print(f"- {signal}", file=f_out)
         else:
-            print("当前无明显看多信号")
-            
+            print("- 当前无明显看多信号", file=f_out)
+        
         # 风险提示
-        print("\n风险提示：")
+        print("\n### 风险提示", file=f_out)
         risks = []
         if latest['RSI'] > 70:
             risks.append("RSI处于超买区间，注意回调风险")
@@ -401,56 +351,59 @@ def analyze_stock_data(code):
             risks.append("价格突破布林带上轨，注意回调风险")
         if latest_volume > avg_volume * 2:
             risks.append("成交量显著放大，注意价格变动风险")
-        # 在风险提示部分添加换手率分析
+        
+        # 换手率风险分析
         if not pd.isna(latest['换手率']) and latest['换手率'] > 15:
             risks.append(f"换手率达到{latest['换手率']:.2f}%，交易过于活跃，注意风险")
-            
+        
         if risks:
             for risk in risks:
-                print(f"- {risk}")
+                print(f"- {risk}", file=f_out)
         else:
-            print("当前无明显风险信号")
+            print("- 当前无明显风险信号", file=f_out)
         
         # 操作建议
-        print("\n操作建议：")
+        print("\n### 操作建议", file=f_out)
         if len(trend_signals) >= 3 and not risks:
-            print("可考虑逢低买入")
+            print("- 可考虑逢低买入", file=f_out)
         elif len(risks) >= 2:
-            print("建议保持谨慎，注意控制仓位")
+            print("- 建议保持谨慎，注意控制仓位", file=f_out)
         else:
-            print("建议观望，等待更明确的信号")
-        
+            print("- 建议观望，等待更明确的信号", file=f_out)
+
+        time.sleep(0.5)  # 给用户一点时间看清进度条完成
+        print(f"日线数据分析完成，结果已保存至: {output_file}", file=sys.stdout)
+    
     except Exception as e:
-        print(f"获取数据时出错：{str(e)}")
-        print("请检查网络连接或确认股票代码是否正确")
+        print(f"获取数据时出错：{str(e)}", file=f_out)
+        print(f"请检查网络连接或确认股票代码是否正确", file=f_out)
+        print(f"日线数据分析失败: {str(e)}", file=sys.stdout)
+    
+    finally:
+        # 关闭输出文件
+        if output_file and f_out != sys.stdout:
+            f_out.close()
+
 
 def main():
-    print("\n请输入股票代码或指数代码，输入 'q' 退出：")
-    print("\n股票代码格式：")
-    print("- 直接输入代码：000001")
-    print("- 带市场前缀：sh000001、sz000001、bj000001")
-    print("\n指数代码支持两种格式：")
-    print("- 000001（上证指数）、399001（深证成指）")
-    print("- 1A0001（上证指数）")
-    print("\n支持的主要指数：")
-    print("- 上证指数：000001 或 1A0001")
-    print("- 深证成指：399001")
-    print("- 创业板指：399006")
-    print("- 沪深300：000300")
-    print("- 上证50：000016")
-    print("- 中证500：399905")
+    """处理命令行参数"""
+    if len(sys.argv) < 2:
+        print("使用方法: python stock_data.py <股票代码> [输出文件名]")
+        sys.exit(1)
     
-    user_input = input().strip()
-    if user_input.lower() == 'q':
-        print("程序已退出")
-        return
-        
-    if not is_valid_stock_code(user_input):
-        print("代码格式错误，请输入正确的股票代码或指数代码")
-        return
-        
-    print(f"\n正在获取 {user_input} 的数据...")
-    analyze_stock_data(user_input)
+    # 从命令行获取股票代码
+    stock_code = sys.argv[1]
+    
+    # 如果提供了第二个参数作为输出文件名
+    output_file = None
+    if len(sys.argv) > 2:
+        output_file = sys.argv[2]
+    else:
+        # 生成默认输出文件名
+        output_file = f"{stock_code}_日线数据_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    
+    analyze_stock_data(stock_code, output_file)
+
 
 if __name__ == "__main__":
     main()
