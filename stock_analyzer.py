@@ -36,11 +36,11 @@ def normalize_stock_code(code):
     if re.match(r'^[0-9][A-Za-z][0-9]{4}$', code.upper()) or \
        re.match(r'^(000[0-9]{3}|399[0-9]{3})$', code):
         return index_map.get(code.upper(), index_map.get(code, code))
-    
+        
     # 如果已经带有市场前缀，则直接返回
     if re.match(r'^(sh|sz|bj)', code.lower()):
         return code.lower()
-    
+        
     # 其他情况（普通股票代码），去除可能的前缀
     return code
 
@@ -72,13 +72,15 @@ def get_stock_name(code):
         # 1. 检查完整的带前缀指数代码
         if normalized_code in index_names:
             return index_names[normalized_code]
+            
         # 2. 检查不带前缀的指数代码
         if re.match(r'^(000[0-9]{3}|399[0-9]{3})$', code):
             return index_names.get(code, None)
+            
         # 3. 检查老式指数代码（如1A0001）
         if re.match(r'^[0-9][A-Za-z][0-9]{4}$', code.upper()):
             return index_names.get(code.upper(), None)
-        
+            
         # 如果不是指数，则获取股票名称
         # 去除可能的市场前缀
         pure_code = re.sub(r'^(sh|sz|bj)', '', normalized_code)
@@ -86,16 +88,22 @@ def get_stock_name(code):
         stock_row = stock_info[stock_info['代码'] == pure_code]
         if not stock_row.empty:
             return stock_row.iloc[0]['名称']
-        
     except Exception as e:
         print(f"获取名称时出错: {e}")
-        return None
+    return None
+
+
+def ensure_dir(directory):
+    """确保目录存在，如果不存在则创建"""
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+        print(f"创建输出目录: {directory}")
+    return directory
 
 
 def run_stock_analysis(stock_code):
     """
     顺序执行股票数据分析脚本
-    
     Args:
         stock_code: 股票代码
     """
@@ -103,28 +111,34 @@ def run_stock_analysis(stock_code):
     normalized_code = normalize_stock_code(stock_code)
     stock_name = get_stock_name(stock_code)
     
-    # 生成当前时间戳，用于文件名
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    # 创建输出目录结构
+    today = datetime.now().strftime('%Y%m%d')
+    output_dir = ensure_dir(os.path.join(os.getcwd(), "stock_results", today))
     
-    # 设置输出文件名
-    daily_output_file = f"{normalized_code}_日线数据_{timestamp}.txt"
-    minute_output_file = f"{normalized_code}_分钟级数据_{timestamp}.txt"
+    # 生成当前时间戳，用于文件名
+    timestamp = datetime.now().strftime('%H%M%S')
+    
+    # 设置输出文件名 (加入股票名称)
+    name_part = f"_{stock_name}" if stock_name else ""
+    daily_output_file = os.path.join(output_dir, f"{normalized_code}{name_part}_日线数据_{today}_{timestamp}.txt")
+    minute_output_file = os.path.join(output_dir, f"{normalized_code}{name_part}_分钟级数据_{today}_{timestamp}.txt")
     
     print(f"===== 开始分析股票 {normalized_code} ({stock_name}) =====")
-    
+
     # 执行日线数据分析脚本
     print("\n1. 正在获取股票日线数据...")
     try:
         result = subprocess.run(
-            ['python', 'stock_data.py', normalized_code, daily_output_file], 
+            ['python', 'stock_data.py', normalized_code, daily_output_file],
             check=True,
             text=True
         )
-        print(f"   日线数据已保存至: {daily_output_file}")
+        print(f"   日线数据已保存至: {os.path.basename(daily_output_file)}")
+        print(f"   位置: {os.path.dirname(daily_output_file)}")
     except subprocess.CalledProcessError as e:
         print(f"   日线数据分析失败: {e}")
         return
-    
+
     # 执行分钟级数据分析脚本
     print("\n2. 正在获取股票分钟级数据...")
     try:
@@ -133,14 +147,16 @@ def run_stock_analysis(stock_code):
             check=True,
             text=True
         )
-        print(f"   分钟级数据已保存至: {minute_output_file}")
+        print(f"   分钟级数据已保存至: {os.path.basename(minute_output_file)}")
+        print(f"   位置: {os.path.dirname(minute_output_file)}")
     except subprocess.CalledProcessError as e:
         print(f"   分钟级数据分析失败: {e}")
-    
+        
     print(f"\n===== 股票 {normalized_code} ({stock_name}) 分析完成 =====")
 
 
 def main():
+    """单次分析的主函数"""
     # 显示欢迎信息
     print("=" * 60)
     print("股票数据分析工具")
@@ -167,10 +183,59 @@ def main():
     if not is_valid_stock_code(stock_code):
         print("代码格式错误，请输入正确的股票代码或指数代码")
         return
-    
+        
     # 执行分析
     run_stock_analysis(stock_code)
 
 
+def continuous_main():
+    """支持连续分析多只股票的主函数"""
+    # 显示欢迎信息
+    print("=" * 60)
+    print("股票数据分析工具 (连续分析版)")
+    print("本工具将依次执行日线数据和分钟级数据分析")
+    print("=" * 60)
+    
+    # 获取第一只股票代码
+    if len(sys.argv) > 1:
+        # 从命令行参数获取股票代码
+        stock_code = sys.argv[1]
+    else:
+        # 交互式输入股票代码
+        print("\n请输入股票代码或指数代码，例如:")
+        print("- 直接输入代码：000001")
+        print("- 带市场前缀：sh000001、sz000001")
+        print("- 指数代码：000001（上证指数）、399001（深证成指）、1A0001（上证指数）")
+        stock_code = input("\n请输入股票代码: ").strip()
+    
+    # 验证并分析第一只股票
+    if not stock_code:
+        print("未输入有效的股票代码，程序退出")
+        return
+        
+    if not is_valid_stock_code(stock_code):
+        print("代码格式错误，请输入正确的股票代码或指数代码")
+        return
+        
+    # 执行第一次分析
+    run_stock_analysis(stock_code)
+    
+    # 连续分析循环
+    while True:
+        print("\033[0;33m输入股票代码继续分析，直接回车退出:\033[0m", end=" ")
+        stock_code = input().strip()
+        
+        if not stock_code:
+            print("\033[0;32m谢谢使用，分析结果在 stock_results 目录!\033[0m")
+            break
+            
+        if not is_valid_stock_code(stock_code):
+            print("代码格式错误，请输入正确的股票代码或指数代码")
+            continue
+            
+        # 执行后续分析
+        run_stock_analysis(stock_code)
+
+
 if __name__ == "__main__":
-    main()
+    continuous_main()  # 使用支持连续分析的主函数
