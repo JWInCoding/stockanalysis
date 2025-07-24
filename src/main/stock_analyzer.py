@@ -175,8 +175,7 @@ def run_comprehensive_analysis(stock_code):
     # 输出总结
     print(f"\n===== 分析完成总结 =====")
     print(f"股票代码: {normalized_code} ({stock_name})")
-    print(f"成功完成: {successful_analyses}/{total_analyses} 项数据获取")
-    print(f"结果目录: {output_dir}")
+    print(f"成功完成: {successful_analyses}/{total_analyses} 项数据获取")    
     
     if successful_analyses == total_analyses:
         print("🎉 所有数据获取任务均已成功完成!")

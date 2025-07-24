@@ -8,8 +8,7 @@ from datetime import datetime
 def ensure_dir(directory):
     """确保目录存在，如果不存在则创建"""
     if not os.path.exists(directory):
-        os.makedirs(directory)
-        print(f"创建输出目录: {directory}")
+        os.makedirs(directory)        
     return directory
 
 
