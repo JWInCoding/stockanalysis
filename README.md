@@ -8,7 +8,6 @@
 stockanalysis/
 ├── README.md                    # 项目说明文档
 ├── start_stock.sh              # 启动脚本
-├── requirements.txt            # 依赖包清单
 ├── src/                        # 源代码目录
 │   ├── main/                   # 主程序
 │   │   └── stock_analyzer.py   # 主分析脚本
