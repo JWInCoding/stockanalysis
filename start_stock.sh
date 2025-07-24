@@ -9,7 +9,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
-echo -e "${GREEN}===== 股票数据分析工具 =====${NC}"
+echo -e "${GREEN}===== 股票数据分析工具 v2.1 =====${NC}"
 
 # 检查虚拟环境
 if [ ! -d "stock_env" ]; then
@@ -20,6 +20,18 @@ fi
 # 激活虚拟环境
 echo "激活虚拟环境..."
 source stock_env/bin/activate
+
+# 添加当前项目路径到Python路径
+export PYTHONPATH="$SCRIPT_DIR/src:$PYTHONPATH"
+
+# 检查并安装依赖
+if [ -f "requirements.txt" ]; then
+    echo "检查依赖包..."
+    pip install -r requirements.txt --quiet
+else
+    echo "安装基础依赖包..."
+    pip install akshare pandas numpy --quiet
+fi
 
 # 检查AKShare版本
 if pip list 2>/dev/null | grep -q "akshare"; then
@@ -44,15 +56,11 @@ except: pass" 2>/dev/null)
             pip install --upgrade akshare 2>/dev/null
         fi
     fi
-else
-    # 安装依赖包
-    echo "安装依赖包..."
-    pip install akshare pandas numpy 2>/dev/null
 fi
 
-# 运行分析脚本(此脚本将自行处理循环分析逻辑)
+# 运行分析脚本
 echo -e "${GREEN}启动分析脚本...${NC}"
-python3 stock_analyzer.py
+python3 -m src.main.stock_analyzer
 
 # 脚本结束
 echo -e "${GREEN}分析结束!${NC}"
